@@ -1,0 +1,6 @@
+settings:
+  # Язык сообщений плагина / Language of plugin messages:
+  #   auto - по клиентской локали игрока (ru -> русский, иначе английский)
+  #   ru   - всегда русский
+  #   en   - always English
+  language: auto

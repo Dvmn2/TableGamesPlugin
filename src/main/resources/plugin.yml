@@ -1,0 +1,13 @@
+name: TableGamesPlugin
+version: '${version}'
+
+main: net.dvmn2.tablegamesplugin.TableGamesPlugin
+api-version: '1.21.4'
+load: POSTWORLD
+
+authors: [ DVMN2 ]
+
+permissions:
+  tablegames.give:
+    description: Allows giving a brand-new deck of playing cards.
+    default: op
