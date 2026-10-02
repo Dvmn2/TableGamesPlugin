@@ -64,7 +64,7 @@ public final class StorageManager {
                 }
             }
         } catch (IOException ex) {
-            plugin.getLogger().severe("Failed to load playing cards state: " + ex.getMessage());
+            plugin.getLogger().severe("Failed to load table games state: " + ex.getMessage());
         }
         return result;
     }
@@ -97,7 +97,7 @@ public final class StorageManager {
         try (Writer writer = Files.newBufferedWriter(tempFile.toPath(), StandardCharsets.UTF_8)) {
             gson.toJson(fileDto, writer);
         } catch (IOException ex) {
-            plugin.getLogger().severe("Failed to write playing cards state: " + ex.getMessage());
+            plugin.getLogger().severe("Failed to write table games state: " + ex.getMessage());
             return;
         }
 
@@ -108,7 +108,7 @@ public final class StorageManager {
             try {
                 Files.move(tempFile.toPath(), storageFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             } catch (IOException fallbackEx) {
-                plugin.getLogger().severe("Failed to persist playing cards state: " + fallbackEx.getMessage());
+                plugin.getLogger().severe("Failed to persist table games state: " + fallbackEx.getMessage());
             }
         }
     }

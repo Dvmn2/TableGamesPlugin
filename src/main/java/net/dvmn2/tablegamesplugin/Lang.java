@@ -36,7 +36,8 @@ public final class Lang {
         DECK_EMPTY,
         WRONG_DECK,
         DECK_COLLECTED,
-        DECK_NOT_COLLECTED_IN_DISCARD
+        DECK_NOT_COLLECTED_IN_DISCARD,
+        DECK_NOT_COLLECTED_IN_MAIN
     }
 
     private static final Map<Key, String> RU = new EnumMap<>(Key.class);
@@ -55,6 +56,7 @@ public final class Lang {
         RU.put(Key.WRONG_DECK, "§cЭта карта не принадлежит этой колоде.");
         RU.put(Key.DECK_COLLECTED, "§aКолода полностью собрана.");
         RU.put(Key.DECK_NOT_COLLECTED_IN_DISCARD, "§cКолода ещё не полностью собрана в стопке сброса.");
+        RU.put(Key.DECK_NOT_COLLECTED_IN_MAIN, "§cНе все карты лежат в колоде, собрать её нельзя.");
 
         EN.put(Key.NOT_A_PLAYER, "§cThis command can only be used by a player.");
         EN.put(Key.GIVE_USAGE, "§cUsage: /tablegames give <%s>");
@@ -68,6 +70,7 @@ public final class Lang {
         EN.put(Key.WRONG_DECK, "§cThis card does not belong to this deck.");
         EN.put(Key.DECK_COLLECTED, "§aThe deck has been fully collected.");
         EN.put(Key.DECK_NOT_COLLECTED_IN_DISCARD, "§cThe deck is not fully collected in the discard pile yet.");
+        EN.put(Key.DECK_NOT_COLLECTED_IN_MAIN, "§cNot all cards are in the deck, so it cannot be picked up.");
 
         // Fail fast if a key was added to the enum but not translated.
         for (Key key : Key.values()) {

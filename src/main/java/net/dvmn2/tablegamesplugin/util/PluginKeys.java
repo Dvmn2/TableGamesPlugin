@@ -37,8 +37,8 @@ public final class PluginKeys {
         return key("symbol");
     }
 
-    public static NamespacedKey playingCards() {
-        return key("playing_cards");
+    public static NamespacedKey tableGames() {
+        return key("table_games");
     }
 
     public static NamespacedKey cards() {

@@ -44,11 +44,11 @@ public final class DeckManager {
     private static final double STACK_LAYER_STEP = 0.001;
 
     /**
-     * How far each further face-down card is shifted from the one beneath it, along the
-     * direction the cards "look" (the yaw of the player who started the stack). Tweak this
-     * to make face-down piles look thicker/thinner.
+     * How far a card stacked in "even" mode (shift + click) is shifted from the one beneath
+     * it, along the direction the cards "look" (the yaw of the card beneath). Tweak this to
+     * make such piles look thicker/thinner.
      */
-    private static final double FACE_DOWN_STACK_OFFSET = 0.02;
+    private static final double STACK_POSITION_OFFSET = 0.1;
 
     private final TableGamesPlugin plugin;
     private final StorageManager storageManager;
@@ -79,7 +79,7 @@ public final class DeckManager {
             decks.put(deck.getDeckId(), deck);
             relinkEntities(deck);
         }
-        plugin.getLogger().info("Loaded " + decks.size() + " active playing card deck(s).");
+        plugin.getLogger().info("Loaded " + decks.size() + " active table game deck(s).");
     }
 
     /**
@@ -364,6 +364,20 @@ public final class DeckManager {
     }
 
     /**
+     * Puts a card on top of the main pile (the next one to be dealt).
+     */
+    public MoveResult putCardOnTopOfDeck(ActiveDeck deck, Card card) {
+        if (!card.getDeckId().equals(deck.getDeckId())) {
+            return MoveResult.WRONG_DECK;
+        }
+        deck.getMainPile().add(card);
+        updateTrumpDisplay(deck);
+        markDirty();
+        playAtAnchor(deck, PluginSounds.PUT_CARD_INTO_PILE);
+        return MoveResult.SUCCESS;
+    }
+
+    /**
      * Plays a sound at the main pile's anchor point, if its world is currently loaded.
      */
     private void playAtAnchor(ActiveDeck deck, String soundKey) {
@@ -404,6 +418,21 @@ public final class DeckManager {
             return MoveResult.WRONG_DECK;
         }
         deck.getDiscardPile().add(card);
+        markDirty();
+        playAtDiscardAnchor(deck, PluginSounds.PUT_CARD_INTO_PILE);
+        return MoveResult.SUCCESS;
+    }
+
+    /**
+     * Inserts a card into the discard pile at a random position (any index, including
+     * the very top and the very bottom).
+     */
+    public MoveResult insertCardIntoDiscardRandomly(ActiveDeck deck, Card card) {
+        if (!card.getDeckId().equals(deck.getDeckId())) {
+            return MoveResult.WRONG_DECK;
+        }
+        List<Card> discard = deck.getDiscardPile();
+        discard.add(random.nextInt(discard.size() + 1), card);
         markDirty();
         playAtDiscardAnchor(deck, PluginSounds.PUT_CARD_INTO_PILE);
         return MoveResult.SUCCESS;
@@ -491,16 +520,16 @@ public final class DeckManager {
     // ------------------------------------------------------------------
 
     /**
-     * Puts {@code card} on the table face-up, at a random yaw, starting a new stack.
+     * Puts {@code card} on the table face-up, starting a new stack, with a yaw equal to
+     * {@code playerYaw}.
      */
-    public RevealedCardInstance revealCard(ActiveDeck deck, Block block, Location clickPoint, Card card) {
-        float yaw = TransformUtil.normalizeYaw(random.nextFloat() * 360f);
-        return placeNewCard(deck, block, clickPoint, card, yaw, false);
+    public RevealedCardInstance revealCard(ActiveDeck deck, Block block, Location clickPoint, Card card, float playerYaw) {
+        return placeNewCard(deck, block, clickPoint, card, TransformUtil.normalizeYaw(playerYaw), false);
     }
 
     /**
      * Puts {@code card} on the table face-down (only the card back is shown), starting a
-     * new stack, with a yaw equal to {@code playerYaw} instead of a random one.
+     * new stack, with a yaw equal to {@code playerYaw}.
      */
     public RevealedCardInstance placeCardFaceDown(ActiveDeck deck, Block block, Location clickPoint, Card card, float playerYaw) {
         return placeNewCard(deck, block, clickPoint, card, TransformUtil.normalizeYaw(playerYaw), true);
@@ -529,28 +558,29 @@ public final class DeckManager {
      * card added: it is relocated and re-tagged to the new card, while {@code target}
      * becomes purely visual (its interaction id is cleared, since it is now buried).
      * <p>
-     * The new card inherits the target's orientation:
+     * The new card always inherits the target's orientation (face-up onto face-up,
+     * face-down onto face-down); how it is placed depends on {@code evenStack}:
      * <ul>
-     *     <li>face-up target: the new card is face-up, rotated by a random 22.5-45&deg;
-     *     relative to the target, at the exact same X/Z (a messy pile);</li>
-     *     <li>face-down target: the new card is face-down with exactly the same yaw, shifted
-     *     by {@link #FACE_DOWN_STACK_OFFSET} in the direction that yaw "looks" (a tidy,
-     *     slightly staggered pile).</li>
+     *     <li>{@code false} (plain click): same X/Z, yaw rotated by a random 22.5-45&deg;
+     *     relative to the target (a messy pile);</li>
+     *     <li>{@code true} (shift + click): exactly the same yaw, shifted by
+     *     {@link #STACK_POSITION_OFFSET} in the direction that yaw "looks" (a tidy,
+     *     staggered pile).</li>
      * </ul>
      */
-    public RevealedCardInstance stackCard(ActiveDeck deck, RevealedCardInstance target, Card newCard) {
+    public RevealedCardInstance stackCard(ActiveDeck deck, RevealedCardInstance target, Card newCard, boolean evenStack) {
         Location baseLoc = target.getLocation();
         boolean faceDown = target.isFaceDown();
 
         double newX = baseLoc.getX();
         double newZ = baseLoc.getZ();
         float newYaw;
-        if (faceDown) {
+        if (evenStack) {
             newYaw = target.getYaw();
             // Same convention as a player's look direction: yaw 0 = +Z, yaw 90 = -X.
             double radians = Math.toRadians(newYaw);
-            newX -= Math.sin(radians) * FACE_DOWN_STACK_OFFSET;
-            newZ += Math.cos(radians) * FACE_DOWN_STACK_OFFSET;
+            newX -= Math.sin(radians) * STACK_POSITION_OFFSET;
+            newZ += Math.cos(radians) * STACK_POSITION_OFFSET;
         } else {
             float increment = 22.5f + random.nextFloat() * (45f - 22.5f);
             newYaw = TransformUtil.normalizeYaw(target.getYaw() + increment);
@@ -571,19 +601,21 @@ public final class DeckManager {
     }
 
     /**
-     * Turns every face-down card of the stack {@code anyCardOfStack} belongs to face-up, in
-     * place (positions and yaws are kept; only the displayed glyph changes).
+     * Flips every card of the stack {@code anyCardOfStack} belongs to, in place: face-down
+     * cards become face-up and face-up cards become face-down (positions, yaws and the
+     * order of the stack are kept; only the displayed glyph changes).
      */
-    public void revealStack(ActiveDeck deck, RevealedCardInstance anyCardOfStack) {
+    public void flipStack(ActiveDeck deck, RevealedCardInstance anyCardOfStack) {
         boolean changed = false;
         for (RevealedCardInstance candidate : deck.getRevealedCards()) {
-            if (!candidate.getStackId().equals(anyCardOfStack.getStackId()) || !candidate.isFaceDown()) {
+            if (!candidate.getStackId().equals(anyCardOfStack.getStackId())) {
                 continue;
             }
-            candidate.setFaceDown(false);
+            boolean nowFaceDown = !candidate.isFaceDown();
+            candidate.setFaceDown(nowFaceDown);
             Entity entity = Bukkit.getEntity(candidate.getEntityUuid());
             if (entity instanceof TextDisplay textDisplay) {
-                displayFactory.setRevealedCardFace(textDisplay, candidate.getCard(), false);
+                displayFactory.setRevealedCardFace(textDisplay, candidate.getCard(), nowFaceDown);
             }
             changed = true;
         }

@@ -27,7 +27,8 @@ import org.bukkit.inventory.ItemStack;
  * <ul>
  *     <li>Placing a fresh/full deck item on top of a block (creates a physical deck)</li>
  *     <li>Shift + right-click a deck item to shuffle it (whether placed or not)</li>
- *     <li>Right-click with a held card near its active deck: reveal it face-up on the table</li>
+ *     <li>Right-click with a held card near its active deck: reveal it face-up on the table,
+ *     with the yaw of the player</li>
  *     <li>Shift + right-click with a held card near its active deck: put it on the table
  *     face-down, with the yaw of the player</li>
  * </ul>
@@ -73,7 +74,7 @@ public final class BlockInteractListener implements Listener {
         Player player = event.getPlayer();
         ItemStack itemInHand = player.getInventory().getItemInMainHand();
 
-        if (player.isSneaking() && DeckItemFactory.hasPlayingCardsMarker(itemInHand)) {
+        if (player.isSneaking() && DeckItemFactory.hasTableGamesMarker(itemInHand)) {
             handleShuffle(event, player, itemInHand);
             return;
         }
@@ -87,7 +88,7 @@ public final class BlockInteractListener implements Listener {
             return; // Only the top surface of a block is a valid interaction point.
         }
 
-        if (DeckItemFactory.hasPlayingCardsMarker(itemInHand)) {
+        if (DeckItemFactory.hasTableGamesMarker(itemInHand)) {
             handleDeckPlacement(event, player, clickedBlock, itemInHand);
             return;
         }
@@ -151,11 +152,12 @@ public final class BlockInteractListener implements Listener {
         }
 
         event.setCancelled(true);
+        // Either way the card looks the same way the player is looking right now.
+        float playerYaw = player.getLocation().getYaw();
         if (player.isSneaking()) {
-            // Face-down, looking the same way the player is looking right now.
-            deckManager.placeCardFaceDown(deck, clickedBlock, clickPoint, card, player.getLocation().getYaw());
+            deckManager.placeCardFaceDown(deck, clickedBlock, clickPoint, card, playerYaw);
         } else {
-            deckManager.revealCard(deck, clickedBlock, clickPoint, card);
+            deckManager.revealCard(deck, clickedBlock, clickPoint, card, playerYaw);
         }
         consumeOneItem(player);
     }

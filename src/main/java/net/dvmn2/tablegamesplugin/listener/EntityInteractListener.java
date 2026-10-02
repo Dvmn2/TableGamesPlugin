@@ -3,6 +3,7 @@ package net.dvmn2.tablegamesplugin.listener;
 import net.dvmn2.tablegamesplugin.Lang;
 import net.dvmn2.tablegamesplugin.TableGamesPlugin;
 import net.dvmn2.tablegamesplugin.manager.CardItemFactory;
+import net.dvmn2.tablegamesplugin.manager.DeckItemFactory;
 import net.dvmn2.tablegamesplugin.manager.DeckManager;
 import net.dvmn2.tablegamesplugin.model.ActiveDeck;
 import net.dvmn2.tablegamesplugin.model.Card;
@@ -28,20 +29,24 @@ import java.util.UUID;
  * Handles every mechanic driven by right-clicking directly on one of the plugin's
  * clickable (Interaction) entities:
  * <ul>
- *     <li>Deck (main pile): take the top card (empty hand), return a held card to a random
- *     internal position, or shift + empty hand to pick the whole deck up &mdash; only
- *     possible while every card of the deck is in the main pile (otherwise shift is
- *     ignored and the top card is taken as usual)</li>
- *     <li>Discard pile: take the top card (empty hand), place a held card on top, or
- *     shift + empty hand to collect the full deck</li>
+ *     <li>Deck (main pile) and discard pile (same controls for both):
+ *     <ul>
+ *         <li>empty hand: take the top card</li>
+ *         <li>shift + empty hand: try to pick the whole deck up &mdash; only possible while
+ *         every card of the deck is in this pile, otherwise a message is shown and nothing
+ *         is taken</li>
+ *         <li>a card in hand: put it into a random place of the pile</li>
+ *         <li>shift + a card in hand: put it on top of the pile</li>
+ *     </ul></li>
  *     <li>Card on the table (always the top of its stack):
  *     <ul>
  *         <li>empty hand: take it</li>
- *         <li>shift + empty hand on a face-down stack: reveal the whole stack (turn all its
- *         cards face-up); on a face-up card shift changes nothing, it is taken</li>
- *         <li>a card of the same deck in hand: stack it on top, keeping the orientation of
- *         the stack (face-down onto face-down, face-up onto face-up)</li>
- *     </ul></li>
+ *         <li>shift + empty hand: flip the whole stack (every card face-up &harr; face-down)</li>
+ *         <li>a card of the same deck in hand: stack it on top with a yaw offset</li>
+ *         <li>shift + a card of the same deck in hand: stack it on top with a position
+ *         offset (same yaw)</li>
+ *     </ul>
+ *     The stacked card always keeps the orientation (face-up/face-down) of the stack.</li>
  * </ul>
  * Only the main hand is ever considered (specification section 29), and every branch is
  * guarded against double-firing (specification section 7).
@@ -113,14 +118,16 @@ public final class EntityInteractListener implements Listener {
 
         if (itemInHand.getType() == Material.AIR) {
             if (player.isSneaking()) {
-                // Only succeeds while ALL cards are in the main pile; otherwise fall
-                // through and behave exactly as before (deal the top card).
+                // Only succeeds while ALL cards are in the main pile; otherwise the
+                // player just gets a message and nothing is taken (same as the discard pile).
                 ItemStack assembled = deckManager.collectFullDeckFromMain(player, deck);
                 if (assembled != null) {
                     giveOrDrop(player, assembled);
                     Lang.send(player, Lang.Key.DECK_COLLECTED);
-                    return;
+                } else {
+                    Lang.send(player, Lang.Key.DECK_NOT_COLLECTED_IN_MAIN);
                 }
+                return;
             }
             deckManager.giveTopCard(player, deck);
             return;
@@ -136,7 +143,11 @@ public final class EntityInteractListener implements Listener {
             return;
         }
 
-        deckManager.returnCardToDeck(deck, card);
+        if (player.isSneaking()) {
+            deckManager.putCardOnTopOfDeck(deck, card);
+        } else {
+            deckManager.returnCardToDeck(deck, card);
+        }
         consumeOneItem(player);
     }
 
@@ -166,7 +177,11 @@ public final class EntityInteractListener implements Listener {
             return;
         }
 
-        deckManager.addCardToDiscard(deck, card);
+        if (player.isSneaking()) {
+            deckManager.addCardToDiscard(deck, card);
+        } else {
+            deckManager.insertCardIntoDiscardRandomly(deck, card);
+        }
         consumeOneItem(player);
     }
 
@@ -184,7 +199,8 @@ public final class EntityInteractListener implements Listener {
      * A table card's clickable hitbox is always the current top of its stack (see
      * {@code DeckManager#stackCard}/{@code #takeRevealedCard}), so a click here with an
      * empty hand takes that top card (or, with shift, reveals a face-down stack), and a
-     * click with another card of the same deck in hand stacks it on top instead.
+     * click with another card of the same deck in hand stacks it on top instead (with
+     * shift: evenly, with a position offset instead of a yaw offset).
      */
     private void handleRevealedCardInteract(PlayerInteractEntityEvent event, Player player, ActiveDeck deck, PersistentDataContainer pdc) {
         UUID cardId = parseUuidOrNull(pdc.get(PluginKeys.cardId(), PersistentDataType.STRING));
@@ -207,8 +223,8 @@ public final class EntityInteractListener implements Listener {
 
         if (itemInHand.getType() == Material.AIR) {
             event.setCancelled(true);
-            if (player.isSneaking() && instance.isFaceDown()) {
-                deckManager.revealStack(deck, instance);
+            if (player.isSneaking()) {
+                deckManager.flipStack(deck, instance);
                 return;
             }
             deckManager.takeRevealedCard(deck, instance);
@@ -218,6 +234,9 @@ public final class EntityInteractListener implements Listener {
 
         Card heldCard = CardItemFactory.tryParseCard(itemInHand);
         if (heldCard == null) {
+            if (DeckItemFactory.hasTableGamesMarker(itemInHand)) {
+                event.setCancelled(true); // deck item on a table card: nothing, not even a shuffle
+            }
             return; // Holding something irrelevant; ignore.
         }
 
@@ -227,7 +246,7 @@ public final class EntityInteractListener implements Listener {
         }
 
         event.setCancelled(true);
-        deckManager.stackCard(deck, instance, heldCard);
+        deckManager.stackCard(deck, instance, heldCard, player.isSneaking());
         consumeOneItem(player);
     }
 

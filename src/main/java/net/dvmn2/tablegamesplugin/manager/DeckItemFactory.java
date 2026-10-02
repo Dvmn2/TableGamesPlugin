@@ -46,7 +46,7 @@ public final class DeckItemFactory {
         meta.displayName(Lang.component(type.getNameKey(), viewer));
 
         PersistentDataContainer pdc = meta.getPersistentDataContainer();
-        pdc.set(PluginKeys.playingCards(), PersistentDataType.INTEGER, type.getMarkerValue());
+        pdc.set(PluginKeys.tableGames(), PersistentDataType.INTEGER, type.getMarkerValue());
         pdc.set(PluginKeys.deckId(), PersistentDataType.STRING, deckId.toString());
 
         PersistentDataContainer[] cardContainers = new PersistentDataContainer[orderedCards.size()];
@@ -63,17 +63,17 @@ public final class DeckItemFactory {
         return item;
     }
 
-    public static boolean hasPlayingCardsMarker(ItemStack item) {
+    public static boolean hasTableGamesMarker(ItemStack item) {
         if (item == null || item.getType() == Material.AIR || !item.hasItemMeta()) {
             return false;
         }
         PersistentDataContainer pdc = item.getItemMeta().getPersistentDataContainer();
-        return pdc.has(PluginKeys.playingCards(), PersistentDataType.INTEGER);
+        return pdc.has(PluginKeys.tableGames(), PersistentDataType.INTEGER);
     }
 
     /**
      * @return the fully parsed deck data if this item is a complete, valid deck item
-     * (a known {@code playing_cards} type, a {@code deck_id}, and exactly as many
+     * (a known {@code table_games} type, a {@code deck_id}, and exactly as many
      * well-formed cards as that type has, with unique ids AND unique symbols, all of them
      * valid for that type), otherwise {@code null} — including for a marker-only "invalid"
      * deck item.
@@ -86,12 +86,12 @@ public final class DeckItemFactory {
      * actually containing duplicate symbols and missing others.
      */
     public static DeckItemData tryParseFullDeck(ItemStack item) {
-        if (!hasPlayingCardsMarker(item)) {
+        if (!hasTableGamesMarker(item)) {
             return null;
         }
         PersistentDataContainer pdc = item.getItemMeta().getPersistentDataContainer();
 
-        Integer markerValue = pdc.get(PluginKeys.playingCards(), PersistentDataType.INTEGER);
+        Integer markerValue = pdc.get(PluginKeys.tableGames(), PersistentDataType.INTEGER);
         DeckType type = markerValue == null ? null : DeckType.fromMarkerValue(markerValue);
         String deckIdRaw = pdc.get(PluginKeys.deckId(), PersistentDataType.STRING);
         List<PersistentDataContainer> cardContainers = pdc.get(PluginKeys.cards(), PersistentDataType.LIST.dataContainers());
