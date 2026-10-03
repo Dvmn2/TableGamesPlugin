@@ -36,7 +36,7 @@ public final class DeckItemFactory {
      *               baked into the item, so it does not change if another player holds it)
      */
     public static ItemStack createFullDeckItem(UUID deckId, DeckType type, List<Card> orderedCards, CommandSender viewer) {
-        ItemStack item = new ItemStack(Material.COPPER_INGOT);
+        ItemStack item = new ItemStack(Material.IRON_NUGGET);
         ItemMeta meta = item.getItemMeta();
 
         CustomModelDataComponent component = meta.getCustomModelDataComponent();
