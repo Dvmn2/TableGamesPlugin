@@ -54,7 +54,7 @@ public final class TableGamesCommand {
         String names = String.join("|", Arrays.stream(DeckType.values())
                 .map(DeckType::getCommandName)
                 .toList());
-        Lang.send(ctx.getSource().getSender(), Lang.Key.GIVE_USAGE, names);
+        Lang.sendChat(ctx.getSource().getSender(), Lang.Key.GIVE_USAGE, names);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -62,7 +62,7 @@ public final class TableGamesCommand {
         CommandSourceStack source = ctx.getSource();
 
         if (!(source.getExecutor() instanceof Player player)) {
-            Lang.send(source.getSender(), Lang.Key.NOT_A_PLAYER);
+            Lang.sendChat(source.getSender(), Lang.Key.NOT_A_PLAYER);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -72,7 +72,6 @@ public final class TableGamesCommand {
             player.getWorld().dropItemNaturally(player.getLocation(), extra);
         }
 
-        Lang.send(player, Lang.Key.DECK_GIVEN, Lang.get(type.getNameKey(), player));
         return Command.SINGLE_SUCCESS;
     }
 

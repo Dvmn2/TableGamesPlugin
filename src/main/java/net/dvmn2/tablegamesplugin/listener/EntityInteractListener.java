@@ -123,7 +123,6 @@ public final class EntityInteractListener implements Listener {
                 ItemStack assembled = deckManager.collectFullDeckFromMain(player, deck);
                 if (assembled != null) {
                     giveOrDrop(player, assembled);
-                    Lang.send(player, Lang.Key.DECK_COLLECTED);
                 } else {
                     Lang.send(player, Lang.Key.DECK_NOT_COLLECTED_IN_MAIN);
                 }
@@ -189,7 +188,6 @@ public final class EntityInteractListener implements Listener {
         ItemStack assembled = deckManager.collectFullDeckFromDiscard(player, deck);
         if (assembled != null) {
             giveOrDrop(player, assembled);
-            Lang.send(player, Lang.Key.DECK_COLLECTED);
         } else {
             Lang.send(player, Lang.Key.DECK_NOT_COLLECTED_IN_DISCARD);
         }

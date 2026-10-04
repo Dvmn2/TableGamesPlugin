@@ -14,8 +14,10 @@ import java.util.Map;
  * "ru" / "en" — фиксированный язык; "auto" (по умолчанию) — берётся из
  * клиентской локали игрока (Player#locale()), для не-игроков — английский.
  * <p>
- * Все сообщения игроку отправляются через {@link #send(CommandSender, Key, Object...)}.
- * Шаблоны используют legacy-коды цвета ({@code §a}, {@code §c}) и {@code %s}-подстановки.
+ * Сообщения игроку отправляются через {@link #send(CommandSender, Key, Object...)} в action bar
+ * (не в чат); положительные («успешные») уведомления не выводятся вовсе.
+ * Текст для чата (например, справка по команде) — {@link #sendChat(CommandSender, Key, Object...)}.
+ * Шаблоны используют legacy-коды цвета ({@code §c}) и {@code %s}-подстановки.
  */
 public final class Lang {
 
@@ -23,7 +25,6 @@ public final class Lang {
         // /tablegames
         NOT_A_PLAYER,
         GIVE_USAGE,
-        DECK_GIVEN,
 
         // Названия предметов-колод (подставляются в display name)
         DECK_NAME_POKER,
@@ -35,7 +36,6 @@ public final class Lang {
         NO_CLEAR_SURFACE,
         DECK_EMPTY,
         WRONG_DECK,
-        DECK_COLLECTED,
         DECK_NOT_COLLECTED_IN_DISCARD,
         DECK_NOT_COLLECTED_IN_MAIN
     }
@@ -46,7 +46,6 @@ public final class Lang {
     static {
         RU.put(Key.NOT_A_PLAYER, "§cЭту команду может использовать только игрок.");
         RU.put(Key.GIVE_USAGE, "§cИспользование: /tablegames give <%s>");
-        RU.put(Key.DECK_GIVEN, "§aВам выдана новая колода игральных карт: %s.");
         RU.put(Key.DECK_NAME_POKER, "Покерная колода");
         RU.put(Key.DECK_NAME_DURAK, "Колода для дурака");
         RU.put(Key.INVALID_DECK_ITEM, "§cЭтот предмет — некорректная или неподдерживаемая колода.");
@@ -54,13 +53,11 @@ public final class Lang {
         RU.put(Key.NO_CLEAR_SURFACE, "§cЗдесь нет свободной ровной поверхности для колоды и стопки сброса.");
         RU.put(Key.DECK_EMPTY, "§cКолода пуста.");
         RU.put(Key.WRONG_DECK, "§cЭта карта не принадлежит этой колоде.");
-        RU.put(Key.DECK_COLLECTED, "§aКолода полностью собрана.");
         RU.put(Key.DECK_NOT_COLLECTED_IN_DISCARD, "§cКолода ещё не полностью собрана в стопке сброса.");
         RU.put(Key.DECK_NOT_COLLECTED_IN_MAIN, "§cНе все карты лежат в колоде, собрать её нельзя.");
 
         EN.put(Key.NOT_A_PLAYER, "§cThis command can only be used by a player.");
         EN.put(Key.GIVE_USAGE, "§cUsage: /tablegames give <%s>");
-        EN.put(Key.DECK_GIVEN, "§aA new deck of playing cards has been given to you: %s.");
         EN.put(Key.DECK_NAME_POKER, "Poker Deck");
         EN.put(Key.DECK_NAME_DURAK, "Durak Deck");
         EN.put(Key.INVALID_DECK_ITEM, "§cThis item is an invalid or unsupported deck item.");
@@ -68,7 +65,6 @@ public final class Lang {
         EN.put(Key.NO_CLEAR_SURFACE, "§cThis spot doesn't have a clear, solid surface for the deck and its discard pile.");
         EN.put(Key.DECK_EMPTY, "§cThe deck is empty.");
         EN.put(Key.WRONG_DECK, "§cThis card does not belong to this deck.");
-        EN.put(Key.DECK_COLLECTED, "§aThe deck has been fully collected.");
         EN.put(Key.DECK_NOT_COLLECTED_IN_DISCARD, "§cThe deck is not fully collected in the discard pile yet.");
         EN.put(Key.DECK_NOT_COLLECTED_IN_MAIN, "§cNot all cards are in the deck, so it cannot be picked up.");
 
@@ -106,8 +102,21 @@ public final class Lang {
 
     /**
      * Sends a localized message to {@code recipient}, in the recipient's language.
+     * Players receive it in the action bar; other senders (console) receive it as a regular message.
      */
     public static void send(CommandSender recipient, Key key, Object... args) {
+        Component message = component(key, recipient, args);
+        if (recipient instanceof Player player) {
+            player.sendActionBar(message);
+        } else {
+            recipient.sendMessage(message);
+        }
+    }
+
+    /**
+     * Sends a localized message to the chat regardless of the recipient type.
+     */
+    public static void sendChat(CommandSender recipient, Key key, Object... args) {
         recipient.sendMessage(component(key, recipient, args));
     }
 
