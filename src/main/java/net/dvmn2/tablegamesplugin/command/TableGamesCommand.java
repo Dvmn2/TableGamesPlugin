@@ -3,85 +3,116 @@ package net.dvmn2.tablegamesplugin.command;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
+import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
+import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
+import net.dvmn2.tablegamesplugin.DeckItemFactory;
 import net.dvmn2.tablegamesplugin.Lang;
-import net.dvmn2.tablegamesplugin.manager.DeckItemFactory;
-import net.dvmn2.tablegamesplugin.model.Card;
+import net.dvmn2.tablegamesplugin.Permissions;
+import net.dvmn2.tablegamesplugin.TableGamesPlugin;
 import net.dvmn2.tablegamesplugin.model.DeckType;
+import net.dvmn2.tablegamesplugin.util.PlayerItems;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.List;
 
 /**
- * Brigadier implementation of {@code /tablegames give <poker|durak>}, the only command
- * exposed by this plugin. Registered via {@code LifecycleEvents.COMMANDS} in
- * {@link net.dvmn2.tablegamesplugin.TableGamesPlugin}; no {@code plugin.yml} command
- * entry is required.
- * <p>
- * Permission is enforced via {@link #build()}'s {@code requires} predicate rather than
- * {@code plugin.yml}'s command permission block, so it applies uniformly regardless of
- * how the node is reached (including via {@code /minecraft:tablegames} aliasing).
- * <p>
- * One literal is generated per {@link DeckType}, so adding a new deck type automatically
- * adds its subcommand and tab-completion. A bare {@code /tablegames give} prints usage.
+ * The {@code /tablegames} command tree.
+ * <pre>
+ * /tablegames
+ *   give &lt;deckType&gt; [targets]   (tablegames.give)
+ *   reload                      (tablegames.reload)
+ * </pre>
+ * One literal is generated per {@link DeckType}, so a new deck type automatically gets its subcommand
+ * and tab completion. Without {@code targets} the deck goes to the executor.
  */
 public final class TableGamesCommand {
 
-    private static final String PERMISSION = "tablegames.give";
+    private static final String ARG_TARGETS = "targets";
 
-    private TableGamesCommand() {
+    private final TableGamesPlugin plugin;
+    private final DeckItemFactory deckItems;
+
+    public TableGamesCommand(TableGamesPlugin plugin, DeckItemFactory deckItems) {
+        this.plugin = plugin;
+        this.deckItems = deckItems;
     }
 
-    public static LiteralCommandNode<CommandSourceStack> build() {
+    public LiteralCommandNode<CommandSourceStack> build() {
         LiteralArgumentBuilder<CommandSourceStack> give = Commands.literal("give")
-                .executes(TableGamesCommand::executeUsage);
-
+                .requires(src -> src.getSender().hasPermission(Permissions.GIVE))
+                .executes(this::usage);
         for (DeckType type : DeckType.values()) {
             give.then(Commands.literal(type.getCommandName())
-                    .executes(ctx -> executeGive(ctx, type)));
+                    .executes(ctx -> give(ctx, type, false))
+                    .then(Commands.argument(ARG_TARGETS, ArgumentTypes.players())
+                            .executes(ctx -> give(ctx, type, true))));
         }
 
         return Commands.literal("tablegames")
-                .requires(source -> source.getSender().hasPermission(PERMISSION))
+                .requires(src -> src.getSender().hasPermission(Permissions.GIVE)
+                        || src.getSender().hasPermission(Permissions.RELOAD))
                 .then(give)
+                .then(Commands.literal("reload")
+                        .requires(src -> src.getSender().hasPermission(Permissions.RELOAD))
+                        .executes(this::reload))
                 .build();
     }
 
-    private static int executeUsage(CommandContext<CommandSourceStack> ctx) {
-        String names = String.join("|", Arrays.stream(DeckType.values())
-                .map(DeckType::getCommandName)
-                .toList());
-        Lang.sendChat(ctx.getSource().getSender(), Lang.Key.GIVE_USAGE, names);
+    private int usage(CommandContext<CommandSourceStack> ctx) {
+        String types = String.join("|", Arrays.stream(DeckType.values()).map(DeckType::getCommandName).toList());
+        Lang.sendChat(ctx.getSource().getSender(), Lang.Key.GIVE_USAGE,
+                Placeholder.unparsed("usage", "give <" + types + "> [targets]"));
+        return 0;
+    }
+
+    private int reload(CommandContext<CommandSourceStack> ctx) {
+        CommandSender sender = ctx.getSource().getSender();
+        plugin.reloadAll();
+        Lang.sendChat(sender, Lang.Key.RELOADED);
         return Command.SINGLE_SUCCESS;
     }
 
-    private static int executeGive(CommandContext<CommandSourceStack> ctx, DeckType type) {
+    private int give(CommandContext<CommandSourceStack> ctx, DeckType type, boolean hasTargets) {
         CommandSourceStack source = ctx.getSource();
+        CommandSender sender = source.getSender();
 
-        if (!(source.getExecutor() instanceof Player player)) {
-            Lang.sendChat(source.getSender(), Lang.Key.NOT_A_PLAYER);
-            return Command.SINGLE_SUCCESS;
+        List<Player> targets;
+        if (hasTargets) {
+            targets = resolveTargets(ctx);
+            if (targets.isEmpty()) {
+                Lang.sendChat(sender, Lang.Key.NO_PLAYERS_FOUND);
+                return 0;
+            }
+        } else if (source.getExecutor() instanceof Player self) {
+            targets = List.of(self);
+        } else {
+            Lang.sendChat(sender, Lang.Key.ONLY_PLAYERS);
+            return 0;
         }
 
-        ItemStack deckItem = createFreshDeckItem(type, player);
-        Map<Integer, ItemStack> leftover = player.getInventory().addItem(deckItem);
-        for (ItemStack extra : leftover.values()) {
-            player.getWorld().dropItemNaturally(player.getLocation(), extra);
+        for (Player target : targets) {
+            PlayerItems.giveOrDrop(target, deckItems.createNewDeckItem(type, target));
+            if (target != sender) {
+                Lang.sendChat(sender, Lang.Key.DECK_GIVEN,
+                        Placeholder.unparsed("player", target.getName()),
+                        Placeholder.component("deck", Lang.get(type.getNameKey(), sender)));
+            }
         }
-
-        return Command.SINGLE_SUCCESS;
+        return targets.size();
     }
 
-    private static ItemStack createFreshDeckItem(DeckType type, Player viewer) {
-        UUID deckId = UUID.randomUUID();
-        String[] symbols = type.initialOrder();
-        List<Card> cards = new ArrayList<>(symbols.length);
-        for (String symbol : symbols) {
-            cards.add(new Card(UUID.randomUUID(), deckId, symbol));
+    private static List<Player> resolveTargets(CommandContext<CommandSourceStack> ctx) {
+        try {
+            return ctx.getArgument(ARG_TARGETS, PlayerSelectorArgumentResolver.class).resolve(ctx.getSource());
+        } catch (CommandSyntaxException ex) {
+            return List.of();
         }
-        return DeckItemFactory.createFullDeckItem(deckId, type, cards, viewer);
     }
 }

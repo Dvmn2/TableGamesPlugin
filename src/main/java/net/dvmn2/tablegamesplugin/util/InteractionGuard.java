@@ -6,33 +6,28 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Prevents a single physical player action (one click) from being processed more than
- * once by plugin logic. This guards against the well-documented Bukkit/Paper behaviour
- * of firing interaction events more than once for what a player perceives as a single
- * action (in addition to filtering by {@link org.bukkit.inventory.EquipmentSlot#HAND},
- * which is the primary defense used by the listeners).
+ * Makes sure one physical click is processed once by plugin logic.
  * <p>
- * Action keys frequently include a per-entity id (e.g. {@code "entity-" + uuid}), so over
- * a server's lifetime the set of distinct keys is effectively unbounded (revealed cards,
- * discarded decks, etc. are constantly replaced by new entities). {@link #sweepStaleEntries()}
- * must be called periodically (see the listeners' constructors) to bound the map's size.
+ * Bukkit may fire interaction events more than once for a single click. Listeners filter by hand
+ * first; this debounce catches the remaining duplicates. Action keys often contain entity ids, so
+ * the set of distinct keys is unbounded over time and {@link #sweepStaleEntries()} must be called
+ * periodically. Thread: main server thread.
  */
 public final class InteractionGuard {
 
-    private static final long DEBOUNCE_WINDOW_NANOS = 100_000_000L; // 100 ms
+    /** Duplicate-click window, nanoseconds (100 ms). */
+    private static final long DEBOUNCE_WINDOW_NANOS = 100_000_000L;
 
-    /**
-     * Entries not touched in this long are considered stale and eligible for removal by
-     * {@link #sweepStaleEntries()}. Comfortably larger than the debounce window itself so
-     * a sweep can never race with an in-flight debounce check.
-     */
-    private static final long STALE_ENTRY_NANOS = 60_000_000_000L; // 60 s
+    /** Entries untouched for this long are dropped by a sweep, nanoseconds (60 s); far above the debounce window. */
+    private static final long STALE_ENTRY_NANOS = 60_000_000_000L;
 
     private final Map<String, Long> lastHandledAt = new ConcurrentHashMap<>();
 
     /**
-     * @return {@code true} the first time this action key is seen for this player within
-     * the debounce window, {@code false} for a duplicate call that follows shortly after.
+     * Registers the action and tells whether it should be handled.
+     *
+     * @return {@code true} the first time {@code actionKey} is seen for this player within the debounce
+     * window, {@code false} for a duplicate that follows shortly after
      */
     public boolean tryConsume(Player player, String actionKey) {
         String mapKey = player.getUniqueId() + "|" + actionKey;
@@ -41,12 +36,7 @@ public final class InteractionGuard {
         return previous == null || (now - previous) > DEBOUNCE_WINDOW_NANOS;
     }
 
-    /**
-     * Removes every entry that hasn't been touched in {@link #STALE_ENTRY_NANOS}, so that
-     * long-lived servers don't accumulate an ever-growing map of one-off entity/action
-     * keys that will never be looked up again. Safe to call from any thread; backed by a
-     * {@link ConcurrentHashMap}.
-     */
+    /** Removes entries that have not been touched for {@link #STALE_ENTRY_NANOS}. */
     public void sweepStaleEntries() {
         long now = System.nanoTime();
         lastHandledAt.entrySet().removeIf(entry -> (now - entry.getValue()) > STALE_ENTRY_NANOS);

@@ -1,6 +1,18 @@
 settings:
-  # Язык сообщений плагина / Language of plugin messages:
-  #   auto - по клиентской локали игрока (ru -> русский, иначе английский)
-  #   ru   - всегда русский
-  #   en   - always English
+  # Plugin message language: "ru", "en" or "auto".
+  # "auto" uses the player's client locale; the console always gets English.
   language: auto
+
+  # How often changed deck state is written to disk, in seconds (1..3600).
+  # Up to this much recent state can be lost on a hard crash; a normal shutdown always saves.
+  # Default: 5
+  save-interval-seconds: 5
+
+  # Maximum distance between a deck and the point where a held card can be put on the table,
+  # in blocks (0.5..16.0).
+  # Default: 3.0
+  reveal-radius-blocks: 3.0
+
+  # Radius within which players hear the plugin's sounds, in blocks (1.0..64.0).
+  # Default: 3.0
+  sound-radius-blocks: 3.0

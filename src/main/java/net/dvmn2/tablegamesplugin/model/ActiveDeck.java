@@ -1,57 +1,50 @@
 package net.dvmn2.tablegamesplugin.model;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.World;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 /**
- * The complete logical state of one physical, currently-active playing card deck.
+ * The complete logical state of one physical, currently active playing card deck.
  * <p>
- * Ordering convention (see specification section 5): within {@link #getMainPile()} and
- * {@link #getDiscardPile()}, index 0 is the BOTTOM card and the LAST index is the TOP
- * card.
+ * Within the main and discard piles index 0 is the BOTTOM card and the last index is the TOP card.
+ * The piles and the table are exposed as read-only views; all changes go through the methods of
+ * this class. Thread: main server thread.
  */
 public final class ActiveDeck {
 
     private final UUID deckId;
     private final DeckType type;
-
-    /**
-     * The fixed set of all cards that belong to this deck ({@link DeckType#getDeckSize()}
-     * of them: 52 for poker, 36 for durak), defined at creation time.
-     */
     private final List<Card> definition;
-
+    private final Anchor anchor;
     private final List<Card> mainPile = new ArrayList<>();
     private final List<Card> discardPile = new ArrayList<>();
     private final List<RevealedCardInstance> revealedCards = new ArrayList<>();
 
-    private String worldName;
-    private int anchorBlockX;
-    private int anchorBlockY;
-    private int anchorBlockZ;
-
-    private UUID mainDisplayEntityId;
-    private UUID discardDisplayEntityId;
-    private UUID trumpDisplayEntityId;
+    @Nullable
+    private UUID mainDisplayId;
+    @Nullable
+    private UUID discardDisplayId;
+    @Nullable
+    private UUID trumpDisplayId;
+    @Nullable
+    private UUID mainInteractionId;
+    @Nullable
+    private UUID discardInteractionId;
 
     /**
-     * The invisible {@code Interaction} entities that actually receive clicks for the
-     * main pile and discard pile respectively; {@code Display} entities have no
-     * interaction hitbox of their own (see {@link net.dvmn2.tablegamesplugin.display.DisplayFactory}).
+     * @param definition the fixed set of every card that belongs to this deck
      */
-    private UUID mainInteractionEntityId;
-    private UUID discardInteractionEntityId;
-
-    private float mainDisplayYaw;
-    private float discardDisplayYaw;
-
-    public ActiveDeck(UUID deckId, DeckType type, List<Card> definition) {
+    public ActiveDeck(UUID deckId, DeckType type, List<Card> definition, Anchor anchor) {
         this.deckId = deckId;
         this.type = type;
-        this.definition = new ArrayList<>(definition);
+        this.definition = List.copyOf(definition);
+        this.anchor = anchor;
     }
 
     public UUID getDeckId() {
@@ -66,110 +59,52 @@ public final class ActiveDeck {
         return definition;
     }
 
+    public Anchor getAnchor() {
+        return anchor;
+    }
+
+    // ---------- Piles ----------
+
     public List<Card> getMainPile() {
-        return mainPile;
+        return Collections.unmodifiableList(mainPile);
     }
 
     public List<Card> getDiscardPile() {
-        return discardPile;
+        return Collections.unmodifiableList(discardPile);
     }
 
-    public List<RevealedCardInstance> getRevealedCards() {
-        return revealedCards;
+    public void pushMain(Card card) {
+        mainPile.add(card);
     }
 
-    public String getWorldName() {
-        return worldName;
+    /** Inserts at {@code index}, shifting the cards above it up. */
+    public void insertMain(int index, Card card) {
+        mainPile.add(index, card);
     }
 
-    public void setWorldName(String worldName) {
-        this.worldName = worldName;
+    /** Removes and returns the top card, or {@code null} when the pile is empty. */
+    @Nullable
+    public Card popMain() {
+        return mainPile.isEmpty() ? null : mainPile.remove(mainPile.size() - 1);
     }
 
-    public int getAnchorBlockX() {
-        return anchorBlockX;
+    public void pushDiscard(Card card) {
+        discardPile.add(card);
     }
 
-    public void setAnchorBlockX(int anchorBlockX) {
-        this.anchorBlockX = anchorBlockX;
+    /** Inserts at {@code index}, shifting the cards above it up. */
+    public void insertDiscard(int index, Card card) {
+        discardPile.add(index, card);
     }
 
-    public int getAnchorBlockY() {
-        return anchorBlockY;
+    /** Removes and returns the top card, or {@code null} when the pile is empty. */
+    @Nullable
+    public Card popDiscard() {
+        return discardPile.isEmpty() ? null : discardPile.remove(discardPile.size() - 1);
     }
 
-    public void setAnchorBlockY(int anchorBlockY) {
-        this.anchorBlockY = anchorBlockY;
-    }
-
-    public int getAnchorBlockZ() {
-        return anchorBlockZ;
-    }
-
-    public void setAnchorBlockZ(int anchorBlockZ) {
-        this.anchorBlockZ = anchorBlockZ;
-    }
-
-    public UUID getMainDisplayEntityId() {
-        return mainDisplayEntityId;
-    }
-
-    public void setMainDisplayEntityId(UUID mainDisplayEntityId) {
-        this.mainDisplayEntityId = mainDisplayEntityId;
-    }
-
-    public UUID getDiscardDisplayEntityId() {
-        return discardDisplayEntityId;
-    }
-
-    public void setDiscardDisplayEntityId(UUID discardDisplayEntityId) {
-        this.discardDisplayEntityId = discardDisplayEntityId;
-    }
-
-    public UUID getTrumpDisplayEntityId() {
-        return trumpDisplayEntityId;
-    }
-
-    public void setTrumpDisplayEntityId(UUID trumpDisplayEntityId) {
-        this.trumpDisplayEntityId = trumpDisplayEntityId;
-    }
-
-    public UUID getMainInteractionEntityId() {
-        return mainInteractionEntityId;
-    }
-
-    public void setMainInteractionEntityId(UUID mainInteractionEntityId) {
-        this.mainInteractionEntityId = mainInteractionEntityId;
-    }
-
-    public UUID getDiscardInteractionEntityId() {
-        return discardInteractionEntityId;
-    }
-
-    public void setDiscardInteractionEntityId(UUID discardInteractionEntityId) {
-        this.discardInteractionEntityId = discardInteractionEntityId;
-    }
-
-    public float getMainDisplayYaw() {
-        return mainDisplayYaw;
-    }
-
-    public void setMainDisplayYaw(float mainDisplayYaw) {
-        this.mainDisplayYaw = mainDisplayYaw;
-    }
-
-    public float getDiscardDisplayYaw() {
-        return discardDisplayYaw;
-    }
-
-    public void setDiscardDisplayYaw(float discardDisplayYaw) {
-        this.discardDisplayYaw = discardDisplayYaw;
-    }
-
-    /**
-     * The bottom-most card of the main pile, i.e. the trump card. {@code null} if the pile
-     * is empty or this deck type has no trump (see {@link DeckType#hasTrump()}).
-     */
+    /** The bottom card of the main pile, or {@code null} for a deck without trump or an empty pile. */
+    @Nullable
     public Card getTrumpCard() {
         if (!type.hasTrump() || mainPile.isEmpty()) {
             return null;
@@ -177,26 +112,98 @@ public final class ActiveDeck {
         return mainPile.get(0);
     }
 
-    public Location getAnchorTopSurfaceCenter() {
-        World world = Bukkit.getWorld(worldName);
-        if (world == null) {
-            return null;
-        }
-        return new Location(world, anchorBlockX + 0.5, anchorBlockY + 1.0, anchorBlockZ + 0.5);
+    // ---------- Table ----------
+
+    public List<RevealedCardInstance> getRevealedCards() {
+        return Collections.unmodifiableList(revealedCards);
     }
 
-    public Location getDiscardTopSurfaceCenter() {
-        World world = Bukkit.getWorld(worldName);
-        if (world == null) {
-            return null;
-        }
-        return new Location(world, anchorBlockX + 1 + 0.5, anchorBlockY + 1.0, anchorBlockZ + 0.5);
+    public void addRevealed(RevealedCardInstance instance) {
+        revealedCards.add(instance);
     }
+
+    public void removeRevealed(RevealedCardInstance instance) {
+        revealedCards.remove(instance);
+    }
+
+    /** Finds the table card with this id, or {@code null}. */
+    @Nullable
+    public RevealedCardInstance findRevealed(UUID cardId) {
+        for (RevealedCardInstance candidate : revealedCards) {
+            if (candidate.getCard().cardId().equals(cardId)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    // ---------- Entities ----------
+
+    @Nullable
+    public UUID getMainDisplayId() {
+        return mainDisplayId;
+    }
+
+    public void setMainDisplayId(@Nullable UUID mainDisplayId) {
+        this.mainDisplayId = mainDisplayId;
+    }
+
+    @Nullable
+    public UUID getDiscardDisplayId() {
+        return discardDisplayId;
+    }
+
+    public void setDiscardDisplayId(@Nullable UUID discardDisplayId) {
+        this.discardDisplayId = discardDisplayId;
+    }
+
+    @Nullable
+    public UUID getTrumpDisplayId() {
+        return trumpDisplayId;
+    }
+
+    public void setTrumpDisplayId(@Nullable UUID trumpDisplayId) {
+        this.trumpDisplayId = trumpDisplayId;
+    }
+
+    /** The invisible click hitbox of the main pile; {@code null} once the pile was dealt out. */
+    @Nullable
+    public UUID getMainInteractionId() {
+        return mainInteractionId;
+    }
+
+    public void setMainInteractionId(@Nullable UUID mainInteractionId) {
+        this.mainInteractionId = mainInteractionId;
+    }
+
+    @Nullable
+    public UUID getDiscardInteractionId() {
+        return discardInteractionId;
+    }
+
+    public void setDiscardInteractionId(@Nullable UUID discardInteractionId) {
+        this.discardInteractionId = discardInteractionId;
+    }
+
+    /** Whether {@code entityId} is one of the entities this deck currently owns. */
+    public boolean referencesEntity(UUID entityId) {
+        if (entityId.equals(mainDisplayId) || entityId.equals(discardDisplayId) || entityId.equals(trumpDisplayId)
+                || entityId.equals(mainInteractionId) || entityId.equals(discardInteractionId)) {
+            return true;
+        }
+        for (RevealedCardInstance revealed : revealedCards) {
+            if (entityId.equals(revealed.getEntityUuid()) || entityId.equals(revealed.getInteractionEntityUuid())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ---------- Collection ----------
 
     /**
-     * A deck may be reassembled from the discard pile only if the main pile and the
-     * table are both empty, and the discard pile contains exactly the unique cards
-     * that belong to this deck (see specification sections 22-23).
+     * Whether the deck can be reassembled from the discard pile: the main pile and the table are
+     * empty and the discard pile holds exactly the cards that belong to this deck.
      */
     public boolean isFullyCollectedInDiscard() {
         if (!mainPile.isEmpty() || !revealedCards.isEmpty()) {
@@ -206,10 +213,9 @@ public final class ActiveDeck {
     }
 
     /**
-     * A deck may be picked up straight from the main (dealing) pile only if every card of
-     * it is still there: the discard pile and the table are both empty, and the main pile
-     * contains exactly the unique cards that belong to this deck. (Cards held by players
-     * are in no pile, so they make the check fail, as they should.)
+     * Whether the deck can be picked up straight from the main pile: the discard pile and the table
+     * are empty and the main pile holds exactly the cards that belong to this deck. Cards held by
+     * players are in no pile, so they make this fail.
      */
     public boolean isFullyCollectedInMain() {
         if (!discardPile.isEmpty() || !revealedCards.isEmpty()) {
@@ -224,13 +230,13 @@ public final class ActiveDeck {
         }
         Set<UUID> pileIds = new HashSet<>();
         for (Card card : pile) {
-            pileIds.add(card.getCardId());
+            pileIds.add(card.cardId());
         }
         if (pileIds.size() != definition.size()) {
             return false;
         }
         for (Card card : definition) {
-            if (!pileIds.contains(card.getCardId())) {
+            if (!pileIds.contains(card.cardId())) {
                 return false;
             }
         }

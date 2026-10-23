@@ -1,16 +1,14 @@
 package net.dvmn2.tablegamesplugin.listener;
 
+import net.dvmn2.tablegamesplugin.CardItemFactory;
+import net.dvmn2.tablegamesplugin.DeckItemFactory;
+import net.dvmn2.tablegamesplugin.DeckManager;
 import net.dvmn2.tablegamesplugin.Lang;
-import net.dvmn2.tablegamesplugin.TableGamesPlugin;
-import net.dvmn2.tablegamesplugin.manager.CardItemFactory;
-import net.dvmn2.tablegamesplugin.manager.DeckItemFactory;
-import net.dvmn2.tablegamesplugin.manager.DeckManager;
 import net.dvmn2.tablegamesplugin.model.ActiveDeck;
 import net.dvmn2.tablegamesplugin.model.Card;
+import net.dvmn2.tablegamesplugin.model.DeckItemData;
 import net.dvmn2.tablegamesplugin.util.InteractionGuard;
-import net.dvmn2.tablegamesplugin.util.PluginSounds;
-import net.dvmn2.tablegamesplugin.util.SoundUtil;
-import org.bukkit.Bukkit;
+import net.dvmn2.tablegamesplugin.util.PlayerItems;
 import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -23,49 +21,42 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
 /**
- * Handles every mechanic driven by right-clicking a block with the main hand:
+ * Handles every mechanic driven by right-clicking with the main hand:
  * <ul>
- *     <li>Placing a fresh/full deck item on top of a block (creates a physical deck)</li>
- *     <li>Shift + right-click a deck item to shuffle it (whether placed or not)</li>
- *     <li>Right-click with a held card near its active deck: reveal it face-up on the table,
- *     with the yaw of the player</li>
- *     <li>Shift + right-click with a held card near its active deck: put it on the table
- *     face-down, with the yaw of the player</li>
+ *     <li>placing a deck item on the top of a block creates a physical deck</li>
+ *     <li>shift + right click with a deck item shuffles it</li>
+ *     <li>right click with a card near its deck puts it on the table face up, looking the way the
+ *     player looks</li>
+ *     <li>shift + right click with a card near its deck puts it on the table face down</li>
  * </ul>
- * Stacking a card onto an already-placed one is handled by {@link EntityInteractListener}.
- * Only the main hand is ever considered (specification section 29), and every branch is
- * guarded against double-firing (specification section 7).
+ * Stacking onto a card that is already on the table is handled by {@link EntityInteractListener}: every
+ * table card has a hitbox, so such a click arrives as an entity interaction and never reaches this class.
+ * Thread: main server thread.
  */
 public final class BlockInteractListener implements Listener {
 
-    private static final double REVEAL_RADIUS = 3.0;
+    private static final String ACTION_SHUFFLE = "shuffle";
+    private static final String ACTION_PLACE_DECK = "place-deck";
+    private static final String ACTION_TABLE_CARD = "table-card";
 
-    /**
-     * How often stale {@link InteractionGuard} entries are swept away.
-     */
-    private static final long GUARD_SWEEP_INTERVAL_TICKS = 20L * 60; // once a minute
+    private final DeckManager manager;
+    private final DeckItemFactory deckItems;
+    private final CardItemFactory cardItems;
+    private final InteractionGuard guard;
 
-    private final TableGamesPlugin plugin;
-    private final DeckManager deckManager;
-    private final InteractionGuard guard = new InteractionGuard();
-
-    public BlockInteractListener(TableGamesPlugin plugin, DeckManager deckManager) {
-        this.plugin = plugin;
-        this.deckManager = deckManager;
-
-        // guard's keys are per-player + per-action-type here (not per-entity), so growth
-        // is much smaller than in EntityInteractListener, but sweeping stale entries costs
-        // nothing and keeps both guards consistent.
-        Bukkit.getScheduler().runTaskTimerAsynchronously(
-                plugin, guard::sweepStaleEntries, GUARD_SWEEP_INTERVAL_TICKS, GUARD_SWEEP_INTERVAL_TICKS);
+    public BlockInteractListener(DeckManager manager, DeckItemFactory deckItems, CardItemFactory cardItems,
+                                 InteractionGuard guard) {
+        this.manager = manager;
+        this.deckItems = deckItems;
+        this.cardItems = cardItems;
+        this.guard = guard;
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onPlayerInteract(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND) {
-            return; // Only main-hand interactions matter; ignore the off-hand duplicate.
+            return; // the off-hand fires a duplicate event
         }
-
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_BLOCK && action != Action.RIGHT_CLICK_AIR) {
             return;
@@ -74,107 +65,81 @@ public final class BlockInteractListener implements Listener {
         Player player = event.getPlayer();
         ItemStack itemInHand = player.getInventory().getItemInMainHand();
 
-        if (player.isSneaking() && DeckItemFactory.hasTableGamesMarker(itemInHand)) {
+        if (player.isSneaking() && deckItems.hasMarker(itemInHand)) {
             handleShuffle(event, player, itemInHand);
             return;
         }
-
         if (action != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
 
         Block clickedBlock = event.getClickedBlock();
         if (clickedBlock == null || event.getBlockFace() != BlockFace.UP) {
-            return; // Only the top surface of a block is a valid interaction point.
+            return; // only the top surface of a block is a valid interaction point
         }
-
-        if (DeckItemFactory.hasTableGamesMarker(itemInHand)) {
+        if (deckItems.hasMarker(itemInHand)) {
             handleDeckPlacement(event, player, clickedBlock, itemInHand);
             return;
         }
-
-        Card card = CardItemFactory.tryParseCard(itemInHand);
+        Card card = cardItems.tryParseCard(itemInHand);
         if (card != null) {
             handleCardOnTable(event, player, clickedBlock, card);
         }
     }
 
     private void handleShuffle(PlayerInteractEvent event, Player player, ItemStack itemInHand) {
-        DeckItemFactory.DeckItemData data = DeckItemFactory.tryParseFullDeck(itemInHand);
-        if (data == null) {
-            return; // Marker-only/invalid items are simply not shuffled.
+        DeckItemData data = deckItems.tryParseFullDeck(itemInHand);
+        if (data == null || !guard.tryConsume(player, ACTION_SHUFFLE)) {
+            return; // marker-only or damaged items are simply not shuffled
         }
-        if (!guard.tryConsume(player, "shuffle")) {
-            return;
-        }
-
-        ItemStack shuffled = deckManager.shuffleDeckItem(player, data);
-        player.getInventory().setItemInMainHand(shuffled);
+        player.getInventory().setItemInMainHand(manager.shuffleDeckItem(player, data));
         event.setCancelled(true);
-        SoundUtil.play(player.getLocation(), PluginSounds.SHUFFLE_DECK);
     }
 
-    private void handleDeckPlacement(PlayerInteractEvent event, Player player, Block clickedBlock, ItemStack itemInHand) {
-        if (!guard.tryConsume(player, "place-deck")) {
+    private void handleDeckPlacement(PlayerInteractEvent event, Player player, Block clickedBlock,
+                                     ItemStack itemInHand) {
+        if (!guard.tryConsume(player, ACTION_PLACE_DECK)) {
             return;
         }
         event.setCancelled(true);
 
-        DeckItemFactory.DeckItemData data = DeckItemFactory.tryParseFullDeck(itemInHand);
+        DeckItemData data = deckItems.tryParseFullDeck(itemInHand);
         if (data == null) {
             Lang.send(player, Lang.Key.INVALID_DECK_ITEM);
             return;
         }
-
-        boolean created = deckManager.createPhysicalDeck(player, clickedBlock, data);
-        if (created) {
-            consumeOneItem(player);
+        switch (manager.createPhysicalDeck(clickedBlock, data)) {
+            case SUCCESS -> PlayerItems.consumeOneFromMainHand(player);
+            case ALREADY_ACTIVE -> Lang.send(player, Lang.Key.DECK_ALREADY_ACTIVE);
+            case NO_CLEAR_SURFACE -> Lang.send(player, Lang.Key.NO_CLEAR_SURFACE);
         }
     }
 
     private void handleCardOnTable(PlayerInteractEvent event, Player player, Block clickedBlock, Card card) {
-        if (!guard.tryConsume(player, "table-card")) {
+        if (!guard.tryConsume(player, ACTION_TABLE_CARD)) {
             return;
         }
-
-        // Stacking a card onto an already-placed one is handled entirely by
-        // EntityInteractListener: every card on the table has an Interaction hitbox
-        // covering it (see DisplayFactory), so a click that lands on one is delivered as
-        // a PlayerInteractEntityEvent and never reaches this block-click handler at all.
-        // What's left here is only the case of putting a brand-new card near its deck.
         Location clickPoint = resolveClickPoint(event, clickedBlock);
 
-        // The card's own deck, and only if it is close enough; a card is never adopted by
-        // some other deck that merely happens to stand nearby.
-        ActiveDeck deck = deckManager.getDeckWithinRange(card.getDeckId(), clickPoint, REVEAL_RADIUS);
+        // Only the card's own deck, and only nearby: a card is never adopted by another deck that merely
+        // stands close by.
+        ActiveDeck deck = manager.getDeckWithinRange(card.deckId(), clickPoint);
         if (deck == null) {
             return;
         }
-
         event.setCancelled(true);
-        // Either way the card looks the same way the player is looking right now.
         float playerYaw = player.getLocation().getYaw();
         if (player.isSneaking()) {
-            deckManager.placeCardFaceDown(deck, clickedBlock, clickPoint, card, playerYaw);
+            manager.placeCardFaceDown(deck, clickedBlock, clickPoint, card, playerYaw);
         } else {
-            deckManager.revealCard(deck, clickedBlock, clickPoint, card, playerYaw);
+            manager.revealCard(deck, clickedBlock, clickPoint, card, playerYaw);
         }
-        consumeOneItem(player);
+        PlayerItems.consumeOneFromMainHand(player);
     }
 
     private Location resolveClickPoint(PlayerInteractEvent event, Block block) {
-        // getInteractionPoint() gives the exact absolute world position of the click;
-        // fall back to the block's top-surface center if it is unexpectedly unavailable.
+        // The interaction point is the exact click position; fall back to the surface centre if absent.
         Location exact = event.getInteractionPoint();
         return exact != null ? exact : block.getLocation().add(0.5, 1.0, 0.5);
-    }
-
-    private void consumeOneItem(Player player) {
-        ItemStack current = player.getInventory().getItemInMainHand();
-        if (current.getAmount() <= 1) {
-            player.getInventory().setItemInMainHand(null);
-        } else {
-            current.setAmount(current.getAmount() - 1);
-        }
     }
 }

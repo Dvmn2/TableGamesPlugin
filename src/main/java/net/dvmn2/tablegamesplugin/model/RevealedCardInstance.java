@@ -1,32 +1,31 @@
 package net.dvmn2.tablegamesplugin.model;
 
 import org.bukkit.Location;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
 
 /**
- * A card that has been put on the table, tracked together with the TextDisplay
- * entity representing it, the Interaction entity that makes it clickable (TextDisplay
- * has no interaction hitbox of its own — see
- * {@link net.dvmn2.tablegamesplugin.display.DisplayFactory}), and its exact world
- * position/yaw.
+ * A card lying on the table, tracked together with the text display that shows it, the
+ * {@code Interaction} entity that makes it clickable, and its exact position.
  * <p>
- * A card is either face-up (its symbol is shown) or face-down (only the card back is
- * shown; the real identity is kept here, server-side). Cards that were stacked onto each
- * other share a {@link #getStackId() stack id}: stacks can no longer be recognised by
- * identical X/Z, because face-down stacks are deliberately offset card by card.
+ * A card is face up (its symbol is shown) or face down (only the back is shown; the real identity
+ * stays server-side). Cards stacked on each other share a stack id, because face-down stacks are
+ * offset card by card and cannot be recognised by position. Only the top card of a stack carries a
+ * click hitbox. Thread: main server thread.
  */
 public final class RevealedCardInstance {
 
     private final Card card;
     private final UUID stackId;
-    private UUID entityUuid;
+    private final UUID entityUuid;
+    private final Location location;
+    private final float yaw;
+    @Nullable
     private UUID interactionEntityUuid;
-    private Location location;
-    private float yaw;
     private boolean faceDown;
 
-    public RevealedCardInstance(Card card, UUID entityUuid, UUID interactionEntityUuid,
+    public RevealedCardInstance(Card card, UUID entityUuid, @Nullable UUID interactionEntityUuid,
                                 Location location, float yaw, UUID stackId, boolean faceDown) {
         this.card = card;
         this.entityUuid = entityUuid;
@@ -41,11 +40,32 @@ public final class RevealedCardInstance {
         return card;
     }
 
-    /**
-     * Identifies the stack this card belongs to (a lone card is a stack of one).
-     */
+    /** Identifies the stack this card belongs to; a lone card is a stack of one. */
     public UUID getStackId() {
         return stackId;
+    }
+
+    public UUID getEntityUuid() {
+        return entityUuid;
+    }
+
+    /** The click hitbox; {@code null} for a card that is buried in a stack. */
+    @Nullable
+    public UUID getInteractionEntityUuid() {
+        return interactionEntityUuid;
+    }
+
+    public void setInteractionEntityUuid(@Nullable UUID interactionEntityUuid) {
+        this.interactionEntityUuid = interactionEntityUuid;
+    }
+
+    /** A copy of the position; its world may be {@code null} if the world was not loaded at startup. */
+    public Location getLocation() {
+        return location.clone();
+    }
+
+    public float getYaw() {
+        return yaw;
     }
 
     public boolean isFaceDown() {
@@ -54,37 +74,5 @@ public final class RevealedCardInstance {
 
     public void setFaceDown(boolean faceDown) {
         this.faceDown = faceDown;
-    }
-
-    public UUID getEntityUuid() {
-        return entityUuid;
-    }
-
-    public void setEntityUuid(UUID entityUuid) {
-        this.entityUuid = entityUuid;
-    }
-
-    public UUID getInteractionEntityUuid() {
-        return interactionEntityUuid;
-    }
-
-    public void setInteractionEntityUuid(UUID interactionEntityUuid) {
-        this.interactionEntityUuid = interactionEntityUuid;
-    }
-
-    public Location getLocation() {
-        return location.clone();
-    }
-
-    public void setLocation(Location location) {
-        this.location = location.clone();
-    }
-
-    public float getYaw() {
-        return yaw;
-    }
-
-    public void setYaw(float yaw) {
-        this.yaw = yaw;
     }
 }

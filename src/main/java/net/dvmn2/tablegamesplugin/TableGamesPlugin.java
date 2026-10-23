@@ -1,89 +1,78 @@
 package net.dvmn2.tablegamesplugin;
 
-import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import net.dvmn2.tablegamesplugin.command.TableGamesCommand;
 import net.dvmn2.tablegamesplugin.listener.BlockInteractListener;
 import net.dvmn2.tablegamesplugin.listener.EntityInteractListener;
-import net.dvmn2.tablegamesplugin.manager.DeckManager;
-import org.bukkit.Bukkit;
+import net.dvmn2.tablegamesplugin.listener.EntityLoadListener;
+import net.dvmn2.tablegamesplugin.storage.DeckStore;
+import net.dvmn2.tablegamesplugin.util.InteractionGuard;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.util.function.Supplier;
+
+/** Composition root of the plugin: builds the objects, registers them and stops them. */
 public final class TableGamesPlugin extends JavaPlugin {
 
-    /**
-     * How often {@link DeckManager#flushIfDirty()} runs. Chosen as a compromise between
-     * "state is basically always safely on disk" and "not doing pointless work when
-     * nothing changed" — flushIfDirty() is a no-op unless something actually changed
-     * since the last flush.
-     */
-    private static final long SAVE_FLUSH_INTERVAL_TICKS = 20L * 5; // every 5 seconds
+    /** How often stale click-debounce entries are swept, ticks (once a minute). */
+    private static final long GUARD_SWEEP_INTERVAL_TICKS = 20L * 60;
 
-    private static TableGamesPlugin instance;
-
-    private DeckManager deckManager;
-    private BukkitTask saveFlushTask;
-
-    public TableGamesPlugin() {
-        // Per Paper's guidance, LifecycleEvents.COMMANDS is registered in the
-        // constructor rather than onEnable(): the event can fire before onEnable()
-        // runs (e.g. during certain reload flows), so registering it here guarantees
-        // the handler is attached in time.
-        this.getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
-            Commands commands = event.registrar();
-            commands.register(
-                    TableGamesCommand.build(),
-                    "Give a fresh deck of table game.",
-                    java.util.List.of() // no aliases
-            );
-        });
-    }
-
-    public static TableGamesPlugin getInstance() {
-        return instance;
-    }
+    private volatile TableGamesSettings settings;
+    private DeckManager manager;
+    private BukkitTask guardSweepTask;
 
     @Override
     public void onEnable() {
-        instance = this;
-
-        if (!getDataFolder().exists()) {
-            getDataFolder().mkdirs();
-        }
-
-        // Writes the bundled config.yml on first run; Lang reads settings.language from it.
         saveDefaultConfig();
-        Lang.setLanguage(getConfig().getString("settings.language", "auto"));
+        reloadSettings();
+        Supplier<TableGamesSettings> settingsSupplier = () -> settings;
 
-        this.deckManager = new DeckManager(this);
-        this.deckManager.loadState();
+        PluginKeys keys = new PluginKeys(this);
+        CardItemFactory cardItems = new CardItemFactory(keys);
+        DeckItemFactory deckItems = new DeckItemFactory(keys);
+        DeckStore store = new DeckStore(getDataFolder().toPath().resolve("decks.json"), getLogger());
 
-        getServer().getPluginManager().registerEvents(new BlockInteractListener(this, deckManager), this);
-        getServer().getPluginManager().registerEvents(new EntityInteractListener(this, deckManager), this);
+        manager = new DeckManager(this, settingsSupplier, keys, new DisplayFactory(keys), deckItems, cardItems,
+                new SoundPlayer(settingsSupplier), store);
+        manager.start();
 
-        // Runs on the main thread (cheap unless dirty), and internally hands the actual
-        // disk write off to an async task — see DeckManager#flushIfDirty() for why.
-        this.saveFlushTask = Bukkit.getScheduler().runTaskTimer(
-                this, deckManager::flushIfDirty, SAVE_FLUSH_INTERVAL_TICKS, SAVE_FLUSH_INTERVAL_TICKS);
+        InteractionGuard guard = new InteractionGuard();
+        getServer().getPluginManager().registerEvents(
+                new BlockInteractListener(manager, deckItems, cardItems, guard), this);
+        getServer().getPluginManager().registerEvents(
+                new EntityInteractListener(manager, deckItems, cardItems, keys, guard), this);
+        getServer().getPluginManager().registerEvents(new EntityLoadListener(manager), this);
 
-        getLogger().info("TableGamesPlugin enabled with " + deckManager.getAllDecks().size() + " active deck(s).");
+        TableGamesCommand command = new TableGamesCommand(this, deckItems);
+        getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event ->
+                event.registrar().register(command.build(), "Give table game decks and manage the plugin"));
+
+        guardSweepTask = getServer().getScheduler().runTaskTimer(
+                this, guard::sweepStaleEntries, GUARD_SWEEP_INTERVAL_TICKS, GUARD_SWEEP_INTERVAL_TICKS);
+
+        getLogger().info("Enabled with " + manager.getDeckCount() + " active deck(s).");
     }
 
     @Override
     public void onDisable() {
-        if (saveFlushTask != null) {
-            saveFlushTask.cancel();
+        if (guardSweepTask != null) {
+            guardSweepTask.cancel();
         }
-        if (deckManager != null) {
-            // Synchronous, blocking save: we need this to fully complete before shutdown
-            // proceeds, so the periodic async flush path is not used here.
-            deckManager.saveState();
+        if (manager != null) {
+            manager.shutdown();
         }
-        getLogger().info("TableGamesPlugin disabled.");
     }
 
-    public DeckManager getDeckManager() {
-        return deckManager;
+    /** Re-reads config.yml and applies it without restarting the plugin or losing state. */
+    public void reloadAll() {
+        reloadConfig();
+        reloadSettings();
+        manager.onSettingsReloaded();
+    }
+
+    private void reloadSettings() {
+        settings = TableGamesSettings.parse(getConfig(), getLogger());
+        Lang.setLanguage(settings.language());
     }
 }

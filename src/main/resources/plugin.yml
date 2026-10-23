@@ -1,13 +1,23 @@
 name: TableGamesPlugin
+description: Physical playing card decks (poker and durak) with cards that can be dealt, stacked and flipped on tables.
 version: '${version}'
 
 main: net.dvmn2.tablegamesplugin.TableGamesPlugin
-api-version: '1.21.11'
+api-version: '1.21'
 load: POSTWORLD
 
 authors: [ DVMN2 ]
 
 permissions:
   tablegames.give:
-    description: Allows giving a brand-new deck of playing cards.
+    description: Use /tablegames give
     default: op
+  tablegames.reload:
+    description: Use /tablegames reload
+    default: op
+  tablegames.admin:
+    description: All administrative TableGames permissions
+    default: op
+    children:
+      tablegames.give: true
+      tablegames.reload: true
